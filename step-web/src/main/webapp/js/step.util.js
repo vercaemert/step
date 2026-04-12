@@ -4100,14 +4100,17 @@ step.util = {
 			$('#classicalUICheck').hide();
 		}
 	},
-	showIntroJS: function(element, introMsg, position, width, localStorageName, skipTouchScreen) {
+	showIntroJS: function(element, introMsg, position, width, localStorageName, skipTouchScreen, showNumOfTimes) {
 		if ((skipTouchScreen && step.touchDevice) || (window.innerWidth < width))
 			return false;
 	    var introCountFromStorageOrCookie = step.util.localStorageGetItem(localStorageName);
 		var introCount = parseInt(introCountFromStorageOrCookie, 10);
 		if (isNaN(introCount)) introCount = 0;
-		if ((introCount < 1) && ($(element).is(":visible"))) {
-			step.util.localStorageSetItem(localStorageName, 1);
+		if (!showNumOfTimes || isNaN(showNumOfTimes))
+			showNumOfTimes = 1;
+		if ((introCount < showNumOfTimes) && ($(element).is(":visible"))) {
+			introCount ++;
+			step.util.localStorageSetItem(localStorageName, introCount);
 			var introJsSteps = [
 				{
 					element: element,
