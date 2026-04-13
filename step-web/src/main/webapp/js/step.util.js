@@ -4100,7 +4100,7 @@ step.util = {
 			$('#classicalUICheck').hide();
 		}
 	},
-	showIntroJS: function(element, introMsg, position, width, localStorageName, skipTouchScreen, showNumOfTimes) {
+	showIntroJS: function(element, introMsg, position, width, localStorageName, skipTouchScreen, showNumOfTimes, sleepTime) {
 		if ((skipTouchScreen && step.touchDevice) || (window.innerWidth < width))
 			return false;
 	    var introCountFromStorageOrCookie = step.util.localStorageGetItem(localStorageName);
@@ -4108,6 +4108,8 @@ step.util = {
 		if (isNaN(introCount)) introCount = 0;
 		if (!showNumOfTimes || isNaN(showNumOfTimes))
 			showNumOfTimes = 1;
+		if (!sleepTime || isNaN(sleepTime))
+			sleepTime = 800;
 		if ((introCount < showNumOfTimes) && ($(element).is(":visible"))) {
 			introCount ++;
 			step.util.localStorageSetItem(localStorageName, introCount);
@@ -4122,10 +4124,25 @@ step.util = {
 				introJs().setOptions({
 					steps: introJsSteps
 				}).start();
-			}, 800);
+			}, sleepTime);
 			return true;
 		}
 		return false;
+	},
+	showBibleOrderForInterlinear: function (timeCalled) { // Wait for element to exist.
+		var element = document.querySelector('.passageContainer.active').querySelector('.interVerseNumbers');
+		if (element != null) // Element is loaded.
+			step.util.showIntroJS(element,
+				"The first Bible determines the word order in interlinear mode.  " +
+				'<a class="videoGuide" href="javascript:step.util.showVideoModal(\'OHB_ESV_Gen1.gif\', 40)"><br>Video guide' +
+				'<span class="glyphicon glyphicon-play-circle" style="font-size:16px;font-family:Glyphicons Halflings"></span>' +
+				'</a> to change word order.',
+				'right', 400, 'step.interlinearTutorial', false, 3, 100);
+		else if (new Date().getTime() - timeCalled < 10000) { // Only call itself within 10 seconds of initial call
+			setTimeout(function() { // Repeat every 450ms.
+				step.util.showBibleOrderForInterlinear(timeCalled)
+			}, 450);
+		}
 	},
 	showIntro: function (showAnyway) {
 		if ((!showAnyway) && (($.getUrlVars().indexOf("skipwelcome") > -1) || (step.state.isLocal()))) return;
@@ -4171,8 +4188,7 @@ step.util = {
 						'Color code grammar is available with a new user interface.',
 						'left', 499, 'step.colorgrammar'))
 						if (!step.util.showIntroJS(document.querySelector('#copy-icon'),
-							__s.copy_intro,
-							'left', 499, 'step.copyIntro'))
+							__s.copy_intro, 'left', 499, 'step.copyIntro'))
 								step.util.showIntroJS(document.querySelector('#summbutton'),
 									"For commentaries from ICC and The Gospel Coalition, click on Summary and then Commentaries",
 									'bottom', 499, 'step.commentaryIntro');

@@ -380,12 +380,7 @@ var PassageMenuView = Backbone.View.extend({
             if ($(this).attr('data-value') === "INTERLINEAR") {
                 if (step.appleTouchDevice) // Only for Android.  On iPad, introJS will cause the bible, reference and search buttons to be gone
                     return;
-                setTimeout(function() {
-                    step.util.showIntroJS(document.querySelector('.interVerseNumbers'),
-                    "In interlinear mode, the first Bible will determine to word order.  " +
-                    '<a class="videoGuide" href="javascript:step.util.showVideoModal(\'OHB_ESV_Gen1.gif\', 40)">See tutorial</a> to change word order.',
-                    'right', 499, 'step.interlinearTutorial', false, 3);
-                }, 1800);
+                step.util.showBibleOrderForInterlinear(new Date().getTime()); // time in milliseconds
             }
         });
 
