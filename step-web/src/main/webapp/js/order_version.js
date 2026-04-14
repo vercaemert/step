@@ -88,8 +88,10 @@ function saveVersionOrder() {
     step.router.navigateSearch(url, true, true, isChangedForColorCodeGrammar);
     if (isChangedForColorCodeGrammar) {
       setTimeout( function() {
-        javascript:step.util.ui.initSidebar('color') }, 1500);
+        step.util.ui.initSidebar('color')
+      }, 1500);
     }
+    step.util.incrementLocalStorage("step.interlinearTutorial");
 }
 
 function userCloseVersionOrder() {

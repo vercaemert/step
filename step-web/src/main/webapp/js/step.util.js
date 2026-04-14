@@ -1087,6 +1087,7 @@ step.util = {
         var otherVersions = allVersions.slice(1);
 		if (!step.util.checkFirstBibleHasPassageBeforeSwap(newMasterVersion, passageModel, otherVersions)) return;
         passageModel.save({ args: newArgs, masterVersion: masterVersion, otherVersions: otherVersions }, { silent: silent });
+		step.util.incrementLocalStorage("step.interlinearTutorial");
     },
     ui: {
         selectMark: function (classes) {
@@ -2689,9 +2690,18 @@ step.util = {
 		step.util.blockBackgroundScrolling("searchSelectionModal");
 		$('textarea#userTextInput').focus();
     },
+	incrementLocalStorage: function(name) {
+		var introCountFromStorageOrCookie = step.util.localStorageGetItem(name);
+		var introCount = parseInt(introCountFromStorageOrCookie, 10);
+		if (isNaN(introCount)) introCount = 0;
+		introCount ++;
+		step.util.localStorageSetItem(name, introCount);
+	},
 	showVideoModal: function (videoFile, seconds) {
         var element = document.getElementById('videoModal');
         if (element) element.parentNode.removeChild(element);
+		if ((videoFile === "OHB_ESV_Gen1.gif") || (videoFile === "KJV_THGNT_John1.gif"))
+			step.util.incrementLocalStorage("step.interlinearTutorial");
         $(_.template(
 			'<div id="videoModal" class="modal selectModal" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true" data-videofile="' + videoFile + '" data-videotime="' + seconds + '">' +
 				'<div class="modal-dialog">' +
