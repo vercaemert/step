@@ -377,11 +377,11 @@ var PassageMenuView = Backbone.View.extend({
             displayModes.find('a').not(this).find(".glyphicon").removeClass("active");
             $(this).find('.glyphicon').addClass("active");
             self._updateOptions();
-            if ($(this).attr('data-value') === "INTERLINEAR") {
-                if (step.appleTouchDevice) // Only for Android.  On iPad, introJS will cause the bible, reference and search buttons to be gone
-                    return;
-                step.util.showBibleOrderForInterlinear(new Date().getTime()); // time in milliseconds
-            }
+            // if ($(this).attr('data-value') === "INTERLINEAR") {
+            //     if (step.appleTouchDevice) // Only for Android.  On iPad, introJS will cause the bible, reference and search buttons to be gone
+            //         return;
+            //     step.util.showBibleOrderForInterlinear(new Date().getTime()); // time in milliseconds
+            // }
         });
 
         return displayModes;
