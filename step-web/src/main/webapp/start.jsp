@@ -446,13 +446,9 @@
                                         <i class="glyphicon glyphicon-resize-small" style="display:none"></i>
                                     </a>
                                 </span>
-                                <a class="panelCopyBtn hidden-sm hidden-md hidden-lg" data-button-name="copy" data-button-location="panel"
-                                   href="javascript:step.util.copyModal();"
-                                   title="<fmt:message key="copy" />">
-                                    <i class="glyphicon glyphicon-copy"></i>
-                                </a>
-                                <span class="dropdown copyDropdown" style="background-color:var(--clrBackground);display:none">
-                                        <a class="dropdown-toggle copyDropdownToggle" data-toggle="dropdown"
+                                <span class="dropdown copyDropdown" style="background-color:var(--clrBackground)"
+                                      data-button-name="copy" data-button-location="panel">
+                                        <a class="copyDropdownToggle"
                                            aria-haspopup="true" aria-expanded="false"
                                            title="<fmt:message key="copy" />">
                                             <i class="glyphicon glyphicon-copy"></i>

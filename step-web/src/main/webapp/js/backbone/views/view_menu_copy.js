@@ -13,27 +13,6 @@
  *               click-end range selection.
  */
 window.step = window.step || {};
-step.config = step.config || {};
-
-(function () {
-    // Feature-flag resolution.
-    //   URL:  ?copyDropdown=1 forces on, ?copyDropdown=0 forces off
-    //   localStorage: step.copyDropdownEnabled = "true" | "false"
-    //   default: false (until phase 5 deletes this flag and retires the classic modal)
-    if (typeof step.config.copyDropdownEnabled === "undefined") {
-        var flagValue = null;
-        try {
-            var qsMatch = /[?&]copyDropdown=([^&]+)/.exec(window.location.search || "");
-            if (qsMatch) flagValue = (qsMatch[1] === "1" || qsMatch[1] === "true");
-            if (flagValue === null && window.localStorage) {
-                var ls = window.localStorage.getItem("step.copyDropdownEnabled");
-                if (ls === "true") flagValue = true;
-                else if (ls === "false") flagValue = false;
-            }
-        } catch (e) { /* localStorage denied */ }
-        step.config.copyDropdownEnabled = (flagValue === true);
-    }
-})();
 
 // ------------------------------------------------------------------
 // Cross-panel singleton
@@ -46,7 +25,6 @@ step.copyDropdown = step.copyDropdown || {
     cooldown: { active: false, until: 0, reason: null, timer: null },
     inFlightCopyId: 0,
 
-    isEnabled: function () { return !!step.config.copyDropdownEnabled; },
     active: function () { return this.openPanelId !== null; },
     shouldSuppressCollapseEvent: function () { return this.listenerGated; },
 
@@ -105,8 +83,7 @@ step.copyDropdown = step.copyDropdown || {
 // ------------------------------------------------------------------
 var PassageCopyMenuView = Backbone.View.extend({
     events: {
-        "show.bs.dropdown .copyDropdown": "handleOpen",
-        "hidden.bs.dropdown .copyDropdown": "handleHidden",
+        "click .copyDropdownToggle": "onToggleClick",
         "click .copyCloseBtn": "onCloseClick",
         "click .copyPrimaryBtn": "onPrimaryClick",
         "click .copyPickDifferent": "onPickDifferent",
@@ -131,30 +108,13 @@ var PassageCopyMenuView = Backbone.View.extend({
         this._gridStart = null;          // verse index
         this._gridEnd = null;
 
-        if (!step.copyDropdown.isEnabled()) return;
-
-        this.$el.find(".copyDropdown").css("display", "");
-
         // Navbar #copy-icon delegates to the active panel's dropdown.
         // Only bind the redirect once (panelId 0 is always present).
         if (this.panelId === 0) {
             $("#copy-icon").attr("href", "javascript:void(0)").off("click.copyDropdown")
                 .on("click.copyDropdown", function (ev) {
                     ev.preventDefault();
-                    var activePanelId = step.util.activePassageId();
-                    var $toggle = step.util.getPassageContainer(activePanelId).find(".copyDropdownToggle");
-                    if ($toggle.length) $toggle.dropdown("toggle");
-                    else step.util.copyModal({ forceClassic: true });
-                });
-
-            $(document).off("click.copyDropdown", ".panelCopyBtn")
-                .on("click.copyDropdown", ".panelCopyBtn", function (ev) {
-                    if (!step.copyDropdown.isEnabled()) return;
-                    ev.preventDefault();
-                    var $container = $(this).closest(".passageContainer");
-                    var $toggle = $container.find(".copyDropdownToggle");
-                    if ($toggle.length) $toggle.dropdown("toggle");
-                    else step.util.copyModal({ forceClassic: true });
+                    step.util.copyModal();
                 });
         }
 
@@ -164,9 +124,29 @@ var PassageCopyMenuView = Backbone.View.extend({
     },
 
     // ----- lifecycle -----
+    // We own the open/close state directly — not via Bootstrap's data-api.
+    // Bootstrap's dropdown plugin double-binds click handlers when
+    // programmatic and declarative ("data-toggle=dropdown") usage mix, which
+    // caused open→immediate-close on the first user click. Our approach:
+    //   open()  adds .open class + fires our own open flow
+    //   close() removes .open + fires our own close flow
+    //   outside-click listener bound on document while open
 
-    handleOpen: function (ev) {
-        if (!$(ev.target).is(".copyDropdown")) return;
+    onToggleClick: function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (this._isOpen()) this.close();
+        else this.open();
+    },
+
+    _isOpen: function () {
+        return this.$el.find(".copyDropdown").hasClass("open");
+    },
+
+    open: function () {
+        var $dd = this.$el.find(".copyDropdown");
+        if ($dd.hasClass("open")) return;
+
         step.copyDropdown.claim(this.panelId, this);
         if (!this.rendered) {
             this._initUI();
@@ -175,27 +155,54 @@ var PassageCopyMenuView = Backbone.View.extend({
         this._mode = "selection";
         this._gridStart = null;
         this._gridEnd = null;
+
+        $dd.addClass("open");
+        $dd.find(".copyDropdownToggle").attr("aria-expanded", "true");
         this._update();
-        ev.stopPropagation();
+        this._bindOutsideClick();
     },
 
-    handleHidden: function (ev) {
-        if (!$(ev.target).is(".copyDropdown")) return;
+    close: function () {
+        var $dd = this.$el.find(".copyDropdown");
+        if (!$dd.hasClass("open")) return;
+        $dd.removeClass("open");
+        $dd.find(".copyDropdownToggle").attr("aria-expanded", "false");
+        this._unbindOutsideClick();
         step.copyDropdown.release(this.panelId);
     },
 
     dismiss: function (opts) {
         opts = opts || {};
-        var $dd = this.$el.find(".copyDropdown");
-        if ($dd.hasClass("open")) {
-            // Prefer Bootstrap's toggle so hide.bs.dropdown fires and state stays in sync.
-            try { $dd.find(".copyDropdownToggle").dropdown("toggle"); }
-            catch (e) {
-                $dd.removeClass("open");
-                $dd.find(".copyDropdownToggle").attr("aria-expanded", "false");
+        if (this._isOpen()) this.close();
+        else if (!opts.silent) step.copyDropdown.release(this.panelId);
+    },
+
+    _bindOutsideClick: function () {
+        var self = this;
+        this._outsideHandler = function (ev) {
+            if (self.$el.find(".copyDropdown").has(ev.target).length === 0) {
+                // Click outside the dropdown — close, unless cooldown is active.
+                if (step.copyDropdown.cooldown.active) return;
+                self.close();
             }
+        };
+        // Defer binding by one event-loop tick: otherwise the very click that
+        // triggered open() continues bubbling, reaches this handler, and
+        // closes the dropdown immediately (especially when opened via the
+        // navbar #copy-icon → copyModal() → $toggle.click() re-dispatch path).
+        var handler = this._outsideHandler;
+        setTimeout(function () {
+            if (self._outsideHandler === handler) {
+                $(document).on("click.copyDropdownOutside", handler);
+            }
+        }, 0);
+    },
+
+    _unbindOutsideClick: function () {
+        if (this._outsideHandler) {
+            $(document).off("click.copyDropdownOutside", this._outsideHandler);
+            this._outsideHandler = null;
         }
-        if (!opts.silent) step.copyDropdown.release(this.panelId);
     },
 
     _forceClose: function () { this.dismiss(); },
@@ -246,6 +253,8 @@ var PassageCopyMenuView = Backbone.View.extend({
         var resolution = this._computeSelectionResolution();
         this._resolution = resolution;
 
+        // Mode policy: if snapshot resolved and user hasn't asked to pick, use
+        // selection mode. Otherwise grid.
         if (this._mode === "selection" && !resolution.resolved) this._mode = "grid";
 
         this._renderSelectionRow(resolution);
@@ -345,6 +354,8 @@ var PassageCopyMenuView = Backbone.View.extend({
             return;
         }
 
+        // Determine columns — 10 on desktop, 7 on small touch devices. Same
+        // heuristic as the classic modal (copy_text.js:_buildChapterVerseTable).
         var cols = 10;
         if (step.touchDevice) {
             var ua = navigator.userAgent.toLowerCase();
@@ -353,6 +364,7 @@ var PassageCopyMenuView = Backbone.View.extend({
             }
         }
 
+        // Gather chapter label from first verse's OSIS anchor
         var chapterLabel = this._deriveChapterLabel(passageContainer, verses);
 
         var html = "";
@@ -389,7 +401,7 @@ var PassageCopyMenuView = Backbone.View.extend({
             this._gridKeydownBound = true;
         }
 
-        // Footer primary button (+ Back-to-selection when a snapshot exists)
+        // Show footer primary button in grid mode
         var gridCopyLabel = _.escape(__s.copy_dropdown_copy || __s.copy_button_label || "Copy");
         var backLabel = _.escape(__s.copy_dropdown_back_to_selection || "Back to selection");
         var footerHtml = '';
@@ -404,6 +416,7 @@ var PassageCopyMenuView = Backbone.View.extend({
     },
 
     _deriveChapterLabel: function (passageContainer, verses) {
+        // Prefer the first verseLink's OSIS "Gen.1.1" → "Gen 1"
         var firstLink = $(passageContainer).find(".verseLink").first();
         var osis = firstLink.attr("name");
         if (!osis) return "";
@@ -443,12 +456,15 @@ var PassageCopyMenuView = Backbone.View.extend({
 
     _renderOptionsStrip: function () {
         var $strip = this.$el.find(".copyOptionsStrip");
+        var self = this;
+
         var masterVersion = this.model.get("masterVersion");
         var extraVers = this.model.get("extraVersions") || "";
         var hasExtraVersions = extraVers !== "";
         var passageContainer = step.util.getPassageContainer(this.panelId);
         var isInterlinear = $(passageContainer).has(".interlinear").length > 0;
 
+        // --- version checkboxes
         var versionsHtml = "";
         if (hasExtraVersions && !isInterlinear) {
             var allVersions = [masterVersion].concat(extraVers.split(","));
@@ -473,6 +489,7 @@ var PassageCopyMenuView = Backbone.View.extend({
             versionsHtml += '</fieldset>';
         }
 
+        // --- notes / xrefs toggles (conditional on version metadata)
         var notesAvailable = this._anyVersionHasNotes();
         var togglesHtml = "";
         if (notesAvailable) {
@@ -514,6 +531,7 @@ var PassageCopyMenuView = Backbone.View.extend({
     },
 
     _resolveCheckedVersions: function (allVersions) {
+        // Priority: snapshot.versions[] → persisted model pref → all versions.
         var snap = step.copyDropdown.selectionSnapshot;
         var persisted = this.model.get("copySelectedVersions");
         if (snap && $.isArray(snap.versions) && snap.versions.length > 0) {
@@ -584,7 +602,7 @@ var PassageCopyMenuView = Backbone.View.extend({
         this._renderStatusRow("");
         this.$el.find(".copyPrimaryBtn").prop("disabled", false);
         this.$el.find(".copyCloseBtn").prop("disabled", false);
-        this._updateGridVisuals();
+        this._updateGridVisuals(); // re-enable grid primary only if range ready
     },
 
     // ----- user interactions -----
@@ -604,6 +622,7 @@ var PassageCopyMenuView = Backbone.View.extend({
         var endIndex = parseInt($btn.attr("data-end-index"), 10);
         if (isNaN(startIndex) || isNaN(endIndex)) return;
 
+        // Validation: if version fieldset is visible, require ≥1 checked
         var $versionField = this.$el.find(".copyVersions");
         if ($versionField.length && this._collectCheckedVersionIndices().length === 0) {
             this._renderStatusRow(
@@ -618,6 +637,7 @@ var PassageCopyMenuView = Backbone.View.extend({
         ev.preventDefault(); ev.stopPropagation();
         this._mode = "grid";
         this._update();
+        // Focus first cell for keyboard users
         var $first = this.$el.find(".copyGridCell").first();
         if ($first.length) $first.focus();
     },
@@ -644,6 +664,7 @@ var PassageCopyMenuView = Backbone.View.extend({
         } else if (this._gridEnd === null) {
             this._gridEnd = idx;
         } else {
+            // Third click — reset to new start
             this._gridStart = idx;
             this._gridEnd = null;
         }
@@ -690,6 +711,9 @@ var PassageCopyMenuView = Backbone.View.extend({
         ev.stopPropagation();
         if (target < 0 || target >= total) return;
         var $target = $cells.filter('[data-verse-index="' + target + '"]');
+        // Keep all cells at tabindex="0" so tabindex churn doesn't steal focus
+        // (Chromium loses focus if the element that just got focus has its
+        // tabindex rotated around it synchronously in the same event loop).
         $target[0].focus();
     },
 
@@ -702,7 +726,9 @@ var PassageCopyMenuView = Backbone.View.extend({
     onVersionToggle: function (ev) {
         ev.stopPropagation();
         var names = this._collectCheckedVersionNames();
+        // Persist; validation happens at copy time
         this.model.save({ copySelectedVersions: names }, { silent: true });
+        // Clear a transient no-versions status if the user just re-checked one
         var $row = this.$el.find(".copyStatusRow");
         if ($row.hasClass("copyStatus--no-versions") && names.length > 0) this._renderStatusRow("");
     },
@@ -724,6 +750,7 @@ var PassageCopyMenuView = Backbone.View.extend({
         var copyId = ++step.copyDropdown.inFlightCopyId;
         $btn.prop("disabled", true);
 
+        // Construct opts so goCopy doesn't need to read #selectnotes / #cpyverN
         var opts = {};
         if (this._anyVersionHasNotes()) {
             opts.wantNotes = !!this.model.get("copyIncludeNotes");
@@ -732,6 +759,7 @@ var PassageCopyMenuView = Backbone.View.extend({
             opts.wantNotes = false;
             opts.wantXrefs = false;
         }
+        // Version indices — only if version fieldset is rendered
         if (this.$el.find(".copyVersionCheckbox").length > 0) {
             opts.checkedVersionIndices = this._collectCheckedVersionIndices();
         }
@@ -785,6 +813,7 @@ var PassageCopyMenuView = Backbone.View.extend({
         if (this._statusTimer) clearTimeout(this._statusTimer);
         this._statusTimer = setTimeout(function () {
             self._renderStatusRow("");
+            // Re-enable primary button if in selection mode; grid mode uses its range state
             if (self._mode === "selection") self.$el.find(".copyPrimaryBtn").prop("disabled", false);
             else self._updateGridVisuals();
             self._statusTimer = null;

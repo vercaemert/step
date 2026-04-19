@@ -2600,58 +2600,14 @@ step.util = {
 			step.util.blockBackgroundScrolling("passageSelectionModal");
   },
 
-  copyModal: function (opts) { // Do not shorten name in pom.xml because it is called at start.jsp
-    opts = opts || {};
-    // Feature-flag route: when the copy dropdown is enabled and not forced to
-    // use the classic modal, toggle the active panel's dropdown instead.
-    if (!opts.forceClassic && step.config && step.config.copyDropdownEnabled &&
-            step.copyDropdown && typeof step.copyDropdown.isEnabled === "function" &&
-            step.copyDropdown.isEnabled()) {
-        var activePanelId = step.util.activePassageId();
-        var $toggle = step.util.getPassageContainer(activePanelId).find(".copyDropdownToggle");
-        if ($toggle.length) {
-            $toggle.dropdown("toggle");
-            return;
-        }
-    }
-    var element = document.getElementById('copyModal');
-    if (element) element.parentNode.removeChild(element);
-    $("div.modal-backdrop.in").remove();
-		var modalHTML = '<div id="copyModal" class="modal selectModal" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">' +
-			'<div class="modal-dialog">' +
-				'<div class="modal-content stepModalFgBg" style="width:95%;max-width:100%;top:0;right:0;bottom:0;left:0;-webkit-overflow-scrolling:touch">' +
-					'<div class="modal-header">' +
-						'<span class="pull-right">' +
-							step.util.modalCloseBtn("copyModal") +
-							'<span class="pull-right">&nbsp;&nbsp;&nbsp;</span>' +
-						'</span>'+
-					'</div>';
-		modalHTML +=
-					'<div id="selectversionstocopy" class="modal-body" style="padding-bottom:0"></div>' +
-					'<div id="bookchaptermodalbody" class="modal-body"></div>';
-		modalHTML +=
-					'<div class="footer" id="copyModalFooter">' +
-						'<div id="includeNotes" style="display:none">' +
-							'<span>&nbsp;&nbsp;<b>Include notes</b>&nbsp;</span>' +
-							'<input type="checkbox" id="selectnotes"/>' +
-						'</div>' +
-						'<div id="includeXRefs" style="display:none">' +
-							'<span>&nbsp;&nbsp;<b>Include cross references</b>&nbsp;</span>' +
-							'<input type="checkbox" id="selectxref"/>' +
-						'</div>' +
-						'<br>' +
-					'</div>' +
-					'<script>' +
-						'$(document).ready(function () {' +
-							'step.copyText.initVerseSelect();' +
-						'});' +
-					'</script>' +
-				'</div>' +
-			'</div>' +
-		'</div>';
-		$(_.template(modalHTML)()).modal("show");
-		step.util.blockBackgroundScrolling("copyModal");
-	},
+  copyModal: function () { // Do not shorten name in pom.xml — still called from start.jsp hrefs
+    // Legacy entry point (navbar #copy-icon). Forwards to the active panel's
+    // copy dropdown. Kept for backward compatibility with any bookmarked /
+    // external JS that invokes step.util.copyModal().
+    var activePanelId = step.util.activePassageId();
+    var $toggle = step.util.getPassageContainer(activePanelId).find(".copyDropdownToggle");
+    if ($toggle.length) $toggle[0].click(); // our view's click handler catches this
+  },
 
 	lexFeedbackModal: function (strongNum, ref, version) { 
     	var element = document.getElementById('lexFeedbackModal');
@@ -4334,7 +4290,7 @@ step.util = {
 			'left', 499, 'step.multiVersionCount');
 	},
 	closeModal: function (modalID) {
-		var modalsRequireUnfreezeOfScroll = " showLongAlertModal showBookOrChapterSummaryModal grammarClrModal passageSelectionModal searchSelectionModal copyModal videoModal fontSettings raiseSupport aboutModal bibleVersions ";
+		var modalsRequireUnfreezeOfScroll = " showLongAlertModal showBookOrChapterSummaryModal grammarClrModal passageSelectionModal searchSelectionModal videoModal fontSettings raiseSupport aboutModal bibleVersions ";
 		if ((modalsRequireUnfreezeOfScroll.indexOf( " " + modalID + " ") > -1) && step.touchDevice && !step.touchWideDevice)
 			$("body").css("overflow-y","auto"); // let the body (web page) scroll
 		if (modalID === "bibleVersions")
