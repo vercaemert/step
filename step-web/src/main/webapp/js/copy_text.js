@@ -1,5 +1,33 @@
 window.step = window.step || {};
 step.copyText = {
+	// UI sink — abstracts the three places goCopy talks to UI chrome.
+	// The classic modal uses _defaultSink (direct DOM + alert). The copy
+	// dropdown installs its own sink for the duration of a copy so those
+	// writes route into the dropdown instead. See view_menu_copy.js.
+	_defaultSink: {
+		showSuccess: function () {
+			$('#bookchaptermodalbody').empty();
+			$('#bookchaptermodalbody').append("<h2>" + __s.text_is_copied);
+			$('#copyModalFooter').empty();
+			var sleep = step.copyText._lastSleepTime || 1000;
+			setTimeout(function () { step.util.closeModal("copyModal"); }, sleep);
+		},
+		showRapidWarning: function (versionsString, sleepMs) {
+			alert("You are copying at a rapid pace.\n\nThe copy function is intended for personal use within the copyrights limitation.  Please review the copyrights requirement for the Bibles (" +
+				versionsString + ") you are using.");
+			$("#copyModal").find('.close').hide();
+		},
+		showNoVersionsSelected: function () {
+			$('#bookchaptermodalbody').empty();
+			$('#bookchaptermodalbody').append("<h2>You must select at least one version to copy.");
+			$('#copyModalFooter').empty();
+			setTimeout(function () { step.util.closeModal("copyModal"); }, 3000);
+		},
+		showCopyError: function (err) { /* classic modal: silent on error */ },
+		showClipboardDenied: function () { /* classic modal: silent */ }
+	},
+	_sink: function () { return this._uiSink || this._defaultSink; },
+
 	initVerseSelect: function() {
 		step.util.closeModal('searchSelectionModal');
 		step.util.closeModal('passageSelectionModal');
@@ -72,8 +100,10 @@ step.copyText = {
 		result.hasSelection = (result.versions.length > 0 || result.startVerse !== '' || result.endVerse !== '');
 		if (result.hasSelection) {
 			result.label = result.startVerseDisplay || '';
-			if (result.endVerseDisplay && result.endVerseDisplay !== result.startVerseDisplay)
-				result.label += ' to ' + result.endVerseDisplay;
+			if (result.endVerseDisplay && result.endVerseDisplay !== result.startVerseDisplay) {
+				var sep = ' ' + (__s.selection_range_separator || 'to') + ' ';
+				result.label += sep + result.endVerseDisplay;
+			}
 			if (result.label === '') result.label = 'your current selection';
 		}
 		return result;
@@ -298,18 +328,43 @@ step.copyText = {
 	_displayVerses: function(hasExtraVersions) {
 	    $('#bookchaptermodalbody').empty();
 		var verses = step.copyText._getVerses(step.util.getPassageContainer(step.util.activePassageId()));
-		if (this.selectionState && this.selectionState.hasSelection) {
-			this.selectionState.startIndex = this._findVerseIndex(verses, this.selectionState.startVerseDisplay);
-			this.selectionState.endIndex = this._findVerseIndex(verses, this.selectionState.endVerseDisplay);
-			if (this.selectionState.startIndex === -1 && this.selectionState.endIndex > -1)
-				this.selectionState.startIndex = this.selectionState.endIndex;
-			if (this.selectionState.endIndex === -1 && this.selectionState.startIndex > -1)
-				this.selectionState.endIndex = this.selectionState.startIndex;
+		var sel = this.selectionState;
+		var resolved = false;
+		if (sel && sel.hasSelection) {
+			sel.startIndex = this._findVerseIndex(verses, sel.startVerseDisplay);
+			sel.endIndex = this._findVerseIndex(verses, sel.endVerseDisplay);
+			if (sel.startIndex === -1 && sel.endIndex > -1) sel.startIndex = sel.endIndex;
+			if (sel.endIndex === -1 && sel.startIndex > -1) sel.endIndex = sel.startIndex;
+			resolved = sel.startIndex > -1 && sel.endIndex > -1;
+		}
+		if (resolved) {
+			this._buildSelectionOnlyPanel(sel.startIndex, sel.endIndex, sel.label, hasExtraVersions);
+			return;
 		}
 		$('#bookchaptermodalbody').append(this._buildChapterVerseTable(-1, hasExtraVersions));
+		if (sel && sel.hasSelection) {
+			var fallback = __s.copy_selection_not_resolved || "We couldn't match your selection to a verse range — please pick below.";
+			var banner = '<div class="copySelectionFallback" role="status" aria-live="polite">' +
+				_.escape(fallback) +
+				'</div>';
+			$('#bookchaptermodalbody').prepend(banner);
+		}
 	},
 
-	goCopy: function(firstVerseIndex, lastVerseIndex) {
+	// Helper used by both the modal's DOM-driven path and the dropdown's
+	// options-driven path. Returns true iff the caller wants version N (0-based).
+	_isVersionChecked: function(opts, n) {
+		if (opts && $.isArray(opts.checkedVersionIndices))
+			return opts.checkedVersionIndices.indexOf(n) > -1;
+		return $('#cpyver' + (n + 1)).prop('checked');
+	},
+
+	// goCopy(firstVerseIndex, lastVerseIndex, opts?)
+	//   opts.wantNotes (bool)          — overrides the #selectnotes checkbox
+	//   opts.wantXrefs (bool)          — overrides the #selectxref checkbox
+	//   opts.checkedVersionIndices (int[]) — overrides #cpyver1..N probes
+	goCopy: function(firstVerseIndex, lastVerseIndex, opts) {
+		opts = opts || {};
 		var passageContainer = step.util.getPassageContainer(step.util.activePassageId());
 		var copyOfPassage = $(passageContainer).find(".passageContentHolder").clone();
 		if (firstVerseIndex > lastVerseIndex) {
@@ -358,8 +413,8 @@ step.copyText = {
 		var isInterlinear = $(passageContainer).has(".interlinear").length > 0;
 		var endNotes = "";
 		var endXrefs = "";
-		var wantNotes = $("#selectnotes").prop("checked");
-		var wantXrefs = $("#selectxref").prop("checked");
+		var wantNotes = (opts.wantNotes !== undefined) ? !!opts.wantNotes : $("#selectnotes").prop("checked");
+		var wantXrefs = (opts.wantXrefs !== undefined) ? !!opts.wantXrefs : $("#selectxref").prop("checked");
 		if (wantNotes || wantXrefs) {
 			var reference = step.util.activePassage().get("reference");
 			var osisRange = step.copyText._getOsisIdsForRange(passageContainer, firstVerseIndex, lastVerseIndex);
@@ -377,7 +432,7 @@ step.copyText = {
 					var allVersions = [masterVersion].concat(extraVersions.split(","));
 					versionsForNotes = [];
 					for (var n = 0; n < allVersions.length; n++) {
-						if ($('#cpyver' + (n + 1)).prop('checked'))
+						if (step.copyText._isVersionChecked(opts, n))
 							versionsForNotes.push(allVersions[n]);
 					}
 				}
@@ -455,7 +510,7 @@ step.copyText = {
 			versionsString += "," + extraVersions;
 			versions = versionsString.split(",");
 			for (var n = 0; n < versions.length; n++) {
-				if ($('#cpyver' + (n + 1)).prop('checked'))
+				if (step.copyText._isVersionChecked(opts, n))
 					numOfSelected ++;
 				else {
 					$(copyOfPassage).find('span[data-version="' + versions[n] + '"]').next().remove();
@@ -464,10 +519,7 @@ step.copyText = {
 				}
 			}
 			if ((numOfSelected == 0) && (interlinearClasses.length == 0)) { // error message only apply for non-interlinear mode
-				$('#bookchaptermodalbody').empty();
-				$('#bookchaptermodalbody').append("<h2>You must select at least one version to copy.");
-				$('#copyModalFooter').empty();
-				setTimeout( function() { step.util.closeModal("copyModal")}, 3000);
+				step.copyText._sink().showNoVersionsSelected();
 				return;
 			}
 			else if (numOfSelected == 1)
@@ -623,19 +675,54 @@ step.copyText = {
 		}
 		var sleepTime = 1000;
 		$.cookie("step.copyTimeStamps", timeStampForNewCookie);
-		if (copiesInLastMinute > 4) {
-			alert("You are copying at a rapid pace.\n\nThe copy function is intended for personal use within the copyrights limitation.  Please review the copyrights requirement for the Bibles (" +
-				versionsString +
-				") you are using.");
+		var rapidCopy = copiesInLastMinute > 4;
+		if (rapidCopy) {
 			sleepTime = Math.min((60 - longestDifference) * 1000, 5000);
-			$("#copyModal").find('.close').hide();
 		}
 		else if (previousTimes.length > 0) sleepTime = 600;
-		navigator.clipboard.writeText(textToCopy);
-		$('#bookchaptermodalbody').empty();
-		$('#bookchaptermodalbody').append("<h2>" + __s.text_is_copied);
-		$('#copyModalFooter').empty();
-		setTimeout( function() { step.util.closeModal("copyModal")}, sleepTime);
+		step.copyText._lastSleepTime = sleepTime;
+
+		// Clipboard write — guarded so dropdown sink can surface clipboard errors.
+		try {
+			var writeResult = navigator.clipboard && navigator.clipboard.writeText
+				? navigator.clipboard.writeText(textToCopy) : null;
+			if (writeResult && typeof writeResult.then === "function") {
+				writeResult["catch"](function () {
+					step.copyText._sink().showClipboardDenied();
+				});
+			} else if (!navigator.clipboard || !navigator.clipboard.writeText) {
+				// Insecure-context fallback: hidden textarea + execCommand
+				var ta = document.createElement("textarea");
+				ta.value = textToCopy;
+				ta.setAttribute("readonly", "");
+				ta.style.position = "absolute";
+				ta.style.left = "-9999px";
+				document.body.appendChild(ta);
+				var prevSel = document.getSelection();
+				var prevRanges = [];
+				if (prevSel && prevSel.rangeCount) {
+					for (var r = 0; r < prevSel.rangeCount; r++) prevRanges.push(prevSel.getRangeAt(r));
+				}
+				ta.select();
+				try { document.execCommand("copy"); }
+				catch (e) { step.copyText._sink().showClipboardDenied(); }
+				document.body.removeChild(ta);
+				// Restore any previous ranges
+				if (prevSel) {
+					prevSel.removeAllRanges();
+					for (var r = 0; r < prevRanges.length; r++) prevSel.addRange(prevRanges[r]);
+				}
+			}
+		} catch (e) {
+			step.copyText._sink().showCopyError(e);
+			return;
+		}
+
+		if (rapidCopy) {
+			step.copyText._sink().showRapidWarning(versionsString, sleepTime);
+		} else {
+			step.copyText._sink().showSuccess();
+		}
 	},
 	_shortenVerseName: function(previousVerseName, verseName) {
 		var verseSplit = verseName.split(/:/);
@@ -664,9 +751,45 @@ step.copyText = {
 		}
 		return verses;
 	},
-	_buildChapterVerseTable: function(firstSelection, hasExtraVersions) {
+	_buildSelectionOnlyPanel: function(firstVerse, lastVerse, label, hasExtraVersions) {
+		step.copyText._evaluateNotesAvailability(hasExtraVersions);
+		this.modalMode = 'selection';
+		var f = Math.min(firstVerse, lastVerse);
+		var l = Math.max(firstVerse, lastVerse);
+		var safeLabel = _.escape(label || '');
+		var heading = __s.copy_your_selection || 'Copy your selected passage';
+		var btnText = (__s.copy_button_label || 'Copy') + (safeLabel ? ' ' + safeLabel : '');
+		var ariaText = (__s.copy_button_aria || 'Copy') + (safeLabel ? ' ' + safeLabel : '');
+		var escapeHatch = __s.copy_choose_different_range || 'Pick a different range';
+		var html =
+			'<div class="header copySelectionOnly">' +
+				'<h4>' + heading + '</h4>' +
+				(safeLabel ? '<p class="copySelectionRange">' + safeLabel + '</p>' : '') +
+				'<button type="button" class="stepButton copySelectionPrimary" ' +
+					'data-button-name="copy_selection" ' +
+					'aria-label="' + ariaText + '" ' +
+					'onclick="step.copyText.goCopy(' + f + ',' + l + ')">' +
+					btnText +
+				'</button>' +
+				'<div class="copySelectionEscape">' +
+					'<a href="javascript:step.copyText._switchToGridMode(' + (hasExtraVersions ? 'true' : 'false') + ')">' +
+						escapeHatch +
+					'</a>' +
+				'</div>' +
+			'</div>';
+		$('#bookchaptermodalbody').empty();
+		$('#bookchaptermodalbody').append(html);
+		setTimeout(function () { $('.copySelectionPrimary').focus(); }, 0);
+	},
+
+	_switchToGridMode: function(hasExtraVersions) {
+		$('#bookchaptermodalbody').empty();
+		$('#bookchaptermodalbody').append(this._buildChapterVerseTable(-1, !!hasExtraVersions));
+		setTimeout(function () { $('#bookchaptermodalbody table a').first().focus(); }, 0);
+	},
+
+	_evaluateNotesAvailability: function(hasExtraVersions) {
 		var passageContainer = step.util.getPassageContainer(step.util.activePassageId());
-		var verses = step.copyText._getVerses(passageContainer);
 		var masterVersion = step.util.activePassage().get("masterVersion");
 		var extraVers = step.util.activePassage().get("extraVersions");
 		var allLoadedVersions = [masterVersion];
@@ -679,29 +802,24 @@ step.copyText = {
 				break;
 			}
 		}
-		if (anyVersionHasNotes) {
-			if (!hasExtraVersions) {
-				var notes = $(passageContainer).find('.note');
-				step.copyText._notesInDOM = (notes.length > 0);
-			} else {
-				// Multi-version: DOM notes are mixed across versions, always use API path
-				step.copyText._notesInDOM = false;
-			}
-			$("#includeNotes").show();
-			$("#includeXRefs").show();
+		if (!anyVersionHasNotes) return;
+		if (!hasExtraVersions) {
+			var notes = $(passageContainer).find('.note');
+			step.copyText._notesInDOM = (notes.length > 0);
+		} else {
+			// Multi-version: DOM notes are mixed across versions, always use API path
+			step.copyText._notesInDOM = false;
 		}
-		var headerMsg = (firstSelection == -1) ? __s.select_the_first_verse_to_copy + "<br><br><br>" : 
+		$("#includeNotes").show();
+		$("#includeXRefs").show();
+	},
+
+	_buildChapterVerseTable: function(firstSelection, hasExtraVersions) {
+		var passageContainer = step.util.getPassageContainer(step.util.activePassageId());
+		var verses = step.copyText._getVerses(passageContainer);
+		step.copyText._evaluateNotesAvailability(hasExtraVersions);
+		var headerMsg = (firstSelection == -1) ? __s.select_the_first_verse_to_copy + "<br><br><br>" :
 			__s.copy_will_start_from_verse + ": " + verses[firstSelection] + "<br>" + __s.select_last_verse_to_copy;
-		var selectionShortcutHTML = '';
-		if ((firstSelection == -1) && this.selectionState && this.selectionState.hasSelection &&
-			this.selectionState.startIndex > -1 && this.selectionState.endIndex > -1) {
-			var selectionLabel = this.selectionState.label;
-			var firstVerse = Math.min(this.selectionState.startIndex, this.selectionState.endIndex);
-			var lastVerse = Math.max(this.selectionState.startIndex, this.selectionState.endIndex);
-			selectionShortcutHTML = '<div class="copySelectionShortcut" style="margin-top:8px">' +
-				'<button type="button" class="stepButton" onclick="step.copyText.goCopy(' + firstVerse + ',' + lastVerse + ')">OR select verses ' + _.escape(selectionLabel) + ', your current selection</button>' +
-				'</div>';
-		}
 		this.modalMode = 'verse';
 		var tableColumns = 10;
 		var widthPercent = 10;
@@ -714,7 +832,7 @@ step.copyText = {
 			}
 		}
 		var html = '<div class="header">' +
-            '<h4>' + headerMsg + '</h4>' + selectionShortcutHTML;
+            '<h4>' + headerMsg + '</h4>';
     	html +=
             '</div>' +
 			'<div style="overflow-y:auto">' +
@@ -732,15 +850,15 @@ step.copyText = {
 			var originalVerseName = verses[i];
 			var verseName = step.copyText._shortenVerseName(previousVerseName, verses[i]);
 			previousVerseName = originalVerseName;
-			
+
 			if (firstSelection > -1) {
 				if (i == firstSelection) verseName = "<b><i>" + verseName + "</i></b>";
 				html += '<td><a href="javascript:step.copyText.goCopy(' + firstSelection + ',' + i + ');"' +
-					'>' + verseName + 
+					'>' + verseName +
 					'</a></td>'
 			}
 			else html += '<td><a href="javascript:step.copyText._buildChapterVerseTable(' + i + ',' + hasExtraVersions + ');"' +
-					'>' + verseName + 
+					'>' + verseName +
 					'</a></td>'
 			if ((chptrOrVrsNum > (tableColumns - 1)) && ((chptrOrVrsNum % tableColumns) == 0)) {
 				html += '</tr><tr>';

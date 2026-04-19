@@ -383,6 +383,11 @@
             new PassageMenuView({
                 model: modelZero
             });
+            if (typeof PassageCopyMenuView === "function") {
+                new PassageCopyMenuView({
+                    model: modelZero
+                });
+            }
 
             step.router.handleRenderModel(modelZero, true, $.getUrlVar('q'));
 

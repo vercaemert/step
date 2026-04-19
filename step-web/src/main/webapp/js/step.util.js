@@ -819,6 +819,11 @@ step.util = {
         new PassageMenuView({
             model: step.util.activePassage()
         });
+        if (typeof PassageCopyMenuView === "function") {
+            new PassageCopyMenuView({
+                model: step.util.activePassage()
+            });
+        }
 
         Backbone.Events.trigger("columnsChanged", {});
         return newPassageId;
@@ -1875,6 +1880,11 @@ step.util = {
 						debounceTimer = setTimeout(function () {
 							var sel = window.getSelection();
 							if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+								// Copy-dropdown gate: when a dropdown is open, clicks inside
+								// it collapse the native selection. Don't flip deselectedAt,
+								// or the 5s grace window will drop us out of selection mode.
+								if (step.copyDropdown && step.copyDropdown.shouldSuppressCollapseEvent && step.copyDropdown.shouldSuppressCollapseEvent())
+									return;
 								if (step.lastPassageSelection && !step.lastPassageSelection.deselectedAt)
 									step.lastPassageSelection.deselectedAt = Date.now();
 								return;
@@ -1911,6 +1921,7 @@ step.util = {
 								endVerse: endInfo.verse,
 								version: startInfo.version || endInfo.version,
 								versions: allVersions,
+								textLength: text.length,
 								timestamp: Date.now(),
 								deselectedAt: null
 							};
@@ -2589,7 +2600,20 @@ step.util = {
 			step.util.blockBackgroundScrolling("passageSelectionModal");
   },
 
-  copyModal: function () { // Do not shorten name in pom.xml because it is called at start.jsp
+  copyModal: function (opts) { // Do not shorten name in pom.xml because it is called at start.jsp
+    opts = opts || {};
+    // Feature-flag route: when the copy dropdown is enabled and not forced to
+    // use the classic modal, toggle the active panel's dropdown instead.
+    if (!opts.forceClassic && step.config && step.config.copyDropdownEnabled &&
+            step.copyDropdown && typeof step.copyDropdown.isEnabled === "function" &&
+            step.copyDropdown.isEnabled()) {
+        var activePanelId = step.util.activePassageId();
+        var $toggle = step.util.getPassageContainer(activePanelId).find(".copyDropdownToggle");
+        if ($toggle.length) {
+            $toggle.dropdown("toggle");
+            return;
+        }
+    }
     var element = document.getElementById('copyModal');
     if (element) element.parentNode.removeChild(element);
     $("div.modal-backdrop.in").remove();
