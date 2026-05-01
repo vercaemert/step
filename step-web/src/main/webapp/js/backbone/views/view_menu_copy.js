@@ -325,7 +325,6 @@ var PassageCopyMenuView = Backbone.View.extend({
         var pickText = _.escape(__s.copy_choose_different_range || "Pick a different range");
 
         var html =
-            '<p class="copySelectionLabel">' + safeLabel + '</p>' +
             '<button type="button" class="copyPrimaryBtn copySelectionPrimary" ' +
                 'data-button-name="copy_selection" ' +
                 'data-start-index="' + resolution.startIndex + '" ' +
@@ -401,15 +400,17 @@ var PassageCopyMenuView = Backbone.View.extend({
             this._gridKeydownBound = true;
         }
 
-        // Show footer primary button in grid mode
+        // Show footer primary button in grid mode. Render order = visual + tab
+        // order: primary copy chip on the left, back-to-selection chip on the
+        // right. Flex layout in copy_dropdown.scss handles spacing.
         var gridCopyLabel = _.escape(__s.copy_dropdown_copy || __s.copy_button_label || "Copy");
         var backLabel = _.escape(__s.copy_dropdown_back_to_selection || "Back to selection");
-        var footerHtml = '';
+        var footerHtml = '<button type="button" class="copyPrimaryBtn copyGridPrimary" disabled>' +
+                         gridCopyLabel + '</button>';
         if (resolution.resolved) {
-            footerHtml += '<button type="button" class="copyBackToSelection copyPrimaryBtn" style="margin-right:6px">' +
+            footerHtml += '<button type="button" class="copyBackToSelection copyPrimaryBtn">' +
                           backLabel + '</button>';
         }
-        footerHtml += '<button type="button" class="copyPrimaryBtn copyGridPrimary" disabled>' + gridCopyLabel + '</button>';
         $footer.html(footerHtml).show();
 
         this._updateGridVisuals();

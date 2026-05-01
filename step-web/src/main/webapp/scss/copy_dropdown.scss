@@ -93,22 +93,14 @@
     }
 
     .copySelectionRow {
-      margin: 4px 0 8px;
-      padding: 6px 8px;
-      border: 1px solid $border-color;
-      border-radius: 4px;
-
-      .copySelectionLabel {
-        margin: 0 0 6px;
-        font-weight: 600;
-      }
+      margin: 4px 0 12px;
 
       .copyPickDifferent {
         background: transparent;
         border: 0;
         color: $text-color;
         cursor: pointer;
-        padding: 4px 0;
+        padding: 6px 0 0;
         font-size: 12px;
         text-decoration: underline;
 
@@ -171,7 +163,11 @@
 
     .copyMenuFooter {
       margin-top: 6px;
-      text-align: right;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
     .copyPrimaryBtn {
@@ -203,6 +199,20 @@
     .copySelectionPrimary {
       width: 100%;
       text-align: center;
+    }
+
+    // Grid-mode footer buttons + selection-mode primary inherit the
+    // .copyPrimaryBtn boxed look (border, radius, padding, hover) — only
+    // the resting color is overridden to match the .argSelect panel-bar
+    // buttons (bible / reference / search). Hover (.copyPrimaryBtn:hover)
+    // flips to black, disabled (.copyPrimaryBtn[disabled]) fades via
+    // opacity. Same SCSS specificity (0,3,0); placed after .copyPrimaryBtn
+    // in source order.
+    .copySelectionPrimary,
+    .copyGridPrimary,
+    .copyBackToSelection {
+      color: $strong-color;
+      color: var(--clrStrongText);
     }
 
     .copyGridSection {
